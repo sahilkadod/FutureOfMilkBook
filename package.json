@@ -1,0 +1,21 @@
+{
+  "name": "future-of-milk-book",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first dairy management app",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-native": "0.84.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}
