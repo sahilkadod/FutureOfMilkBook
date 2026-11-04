@@ -4,7 +4,7 @@ A modern, offline-first dairy management app built with **React Native Community
 
 ## Project status
 
-This repository currently contains the first application foundation. It is **not yet a complete migration** of the original MilkBook app. The original source project must be reviewed before replacing its database, screens, or sync behavior.
+The React Native Community CLI app includes the original MilkBook screens and offline database flow. The website supports MilkBook account sign-in/sign-out, customer records, milk collection, monthly rates, bills, and browser backups. Website customer, milk, and rate changes use the same authenticated API as Android. The browser refreshes after saves, on focus, and every 15 seconds for the selected customer; Android refreshes shared data on resume and every 30 seconds while active.
 
 ## Preserved business requirements
 
@@ -12,22 +12,23 @@ This repository currently contains the first application foundation. It is **not
 - Morning/evening milk quantity and fat entries by date.
 - Monthly milk rates and customer-wise billing.
 - Daily, monthly and yearly reports.
-- Offline-first data entry, backup/restore and a future sync layer.
+- Offline-first Android data entry with API sync, plus browser cache and JSON backup/restore.
 - Display quantity and fat totals to one decimal place; use the label **Total fat**.
 
 ## Billing rule
 
-The legacy rule supplied for MilkBook is:
+The original MilkBook implementation calculates each session separately:
 
-`bill = totalMilk × (totalFat ÷ (sessionCount × 2)) × rate`
+`bill = Σ(session litres × session fat × rate)`
 
-For two sessions, `sessionCount = 2`. Confirm this rule against the original implementation and real dairy statements before production billing.
+Morning and evening amounts are added for each day, then summed for the month. Total fat and average fat are report values; average fat is not used to calculate the bill.
 
 ## Stack direction
 
 - React Native Community CLI + TypeScript
-- Local SQLite database (adapter and migrations to be selected after auditing the existing MilkBook database)
-- Offline-first repository layer, followed by a separately designed API/sync service
+- Native local SQLite through Nitro SQLite, using the audited MilkBook schema
+- Website sessions use an HTTP-only cookie; the browser keeps a per-account cache and JSON backup/restore
+- Both platforms use the authenticated MilkBook API as the shared source for customer, milk, and rate records
 - Modern accessible UI with reusable design tokens
 
 ## Run
@@ -38,4 +39,4 @@ Do not commit secrets. Use `.env.example` for documented variable names only.
 
 ## Next migration step
 
-Upload the existing `MilkBook` project as a ZIP (exclude `node_modules`, Gradle caches, build outputs and APKs). We need to inspect the real navigation, SQLite schema, calculations, and Android configuration before implementing a safe migration.
+Review conflict handling for simultaneous edits and migrate any records that exist only in older browser backups.

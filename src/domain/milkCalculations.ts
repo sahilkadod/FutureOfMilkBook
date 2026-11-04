@@ -14,12 +14,9 @@ export type MilkTotals = {
 };
 
 /**
- * Preserves the legacy MilkBook billing formula:
- * totalMilk * (totalFat / (sessionCount * 2)) * rate.
- *
- * Here totalFat is the sum of the entered morning/evening fat readings.
- * Verify this interpretation against the original app and dairy statements
- * before using the result for production invoices.
+ * Matches the original MilkBook implementation: each morning/evening session
+ * contributes litres * that session's fat reading * rate. The monthly amount
+ * is the sum of those session amounts.
  */
 export function calculateMilkTotals(
   entries: readonly MilkSession[],
@@ -32,6 +29,7 @@ export function calculateMilkTotals(
   let totalMilk = 0;
   let totalFat = 0;
   let sessionCount = 0;
+  let amount = 0;
 
   for (const entry of entries) {
     const values = [
@@ -49,17 +47,18 @@ export function calculateMilkTotals(
       totalMilk += entry.morningLitres;
       totalFat += entry.morningFat;
       sessionCount += 1;
+      amount += entry.morningLitres * entry.morningFat * ratePerFatUnit;
     }
 
     if (entry.eveningLitres > 0) {
       totalMilk += entry.eveningLitres;
       totalFat += entry.eveningFat;
       sessionCount += 1;
+      amount += entry.eveningLitres * entry.eveningFat * ratePerFatUnit;
     }
   }
 
-  const averageFat = sessionCount === 0 ? 0 : totalFat / (sessionCount * 2);
-  const amount = totalMilk * averageFat * ratePerFatUnit;
+  const averageFat = sessionCount === 0 ? 0 : totalFat / sessionCount;
 
   return {
     totalMilk: roundToOne(totalMilk),

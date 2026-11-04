@@ -1,4 +1,6 @@
 node_modules/
+.next/
+*.tsbuildinfo
 *.log
 .DS_Store
 .env
@@ -13,3 +15,5 @@ build/
 *.aab
 *.keystore
 *.jks
+android/.cxx/
+android/app/.cxx/
