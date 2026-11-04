@@ -67,28 +67,36 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  let credentials: {phone?: unknown; password?: unknown};
+  let credentials: {mode?: unknown; name?: unknown; phone?: unknown; password?: unknown; dob?: unknown};
   try {
     credentials = await request.json();
   } catch {
-    return Response.json({error: 'Enter your phone number and password.'}, {status: 400});
+    return Response.json({error: 'Complete the required account details.'}, {status: 400});
   }
 
+  const registering = credentials.mode === 'register';
   if (typeof credentials.phone !== 'string' || typeof credentials.password !== 'string' || !credentials.phone.trim() || !credentials.password) {
     return Response.json({error: 'Enter your phone number and password.'}, {status: 400});
+  }
+  if (registering && (typeof credentials.name !== 'string' || !credentials.name.trim() || typeof credentials.dob !== 'string' || !credentials.dob.trim() || credentials.password.length < 6)) {
+    return Response.json({error: 'Enter your name, date of birth, phone number, and a password with at least 6 characters.'}, {status: 400});
   }
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${apiBaseUrl()}/auth/login`, {
+    const endpoint = registering ? 'register' : 'login';
+    const body = registering
+      ? {name: (credentials.name as string).trim(), phone: credentials.phone.trim(), password: credentials.password, dob: credentials.dob}
+      : {phone: credentials.phone.trim(), password: credentials.password};
+    upstream = await fetch(`${apiBaseUrl()}/auth/${endpoint}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({phone: credentials.phone.trim(), password: credentials.password}),
+      body: JSON.stringify(body),
       cache: 'no-store',
       signal: AbortSignal.timeout(10000),
     });
   } catch {
-    return Response.json({error: 'MilkBook sign-in is unavailable right now. Please try again.'}, {status: 502});
+    return Response.json({error: 'MilkBook account service is unavailable right now. Please try again.'}, {status: 502});
   }
 
   const result = await upstream.json().catch(() => ({})) as {token?: unknown; user?: ApiUser; error?: string; message?: string};

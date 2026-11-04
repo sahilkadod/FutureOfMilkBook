@@ -129,6 +129,8 @@ export default function DashboardPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [loginForm, setLoginForm] = useState({phone: '', password: ''});
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [registerForm, setRegisterForm] = useState({name: '', phone: '', dob: '', password: '', confirmPassword: ''});
   const [section, setSection] = useState<Section>('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -274,6 +276,49 @@ export default function DashboardPage() {
     }
   }
 
+  async function registerAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (registerForm.password.length < 6) {
+      setAuthError('Use a password with at least 6 characters.');
+      return;
+    }
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setAuthError('The passwords do not match.');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const [year, month, day] = registerForm.dob.split('-');
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          mode: 'register',
+          name: registerForm.name.trim(),
+          phone: registerForm.phone.trim(),
+          password: registerForm.password,
+          dob: `${day}/${month}/${year}`,
+        }),
+      });
+      const result = await response.json() as {user?: MilkBookUser; error?: string};
+      if (!response.ok || !result.user) throw new Error(result.error || 'Could not create your account. Try again.');
+      setUser(result.user);
+      setData(readAccountData(result.user.id));
+      setSelectedCustomerId('');
+      setSection('dashboard');
+      setReady(true);
+      setAuthReady(true);
+      setRegisterForm({name: '', phone: '', dob: '', password: '', confirmPassword: ''});
+      await refreshSharedData(result.user.id);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Could not create your account. Try again.');
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
   async function signOut() {
     try {
       const response = await fetch('/api/auth', {method: 'DELETE'});
@@ -406,20 +451,30 @@ export default function DashboardPage() {
   }
 
   if (!user) {
+    const registering = authMode === 'register';
     return (
       <main className="auth-screen">
         <section className="auth-card">
           <a className="brand auth-brand" href="#login"><span className="brand-mark">MB</span><span>Milk<span className="brand-light">Book</span></span></a>
           <p className="auth-kicker">MILKBOOK ACCOUNT</p>
-          <h1>Welcome back</h1>
-          <p className="auth-subtitle">Sign in to open your dairy workspace.</p>
-          <form className="auth-form" onSubmit={event => void signIn(event)}>
-            <Field label="Phone number" value={loginForm.phone} onChange={value => setLoginForm(current => ({...current, phone: value}))} required inputMode="tel" placeholder="Enter your phone number" />
-            <Field label="Password" type="password" value={loginForm.password} onChange={value => setLoginForm(current => ({...current, password: value}))} required placeholder="Enter your password" />
+          <h1>{registering ? 'Create your account' : 'Welcome back'}</h1>
+          <p className="auth-subtitle">{registering ? 'Create a MilkBook account to use it on the website and Android.' : 'Sign in to open your dairy workspace.'}</p>
+          <form className="auth-form" onSubmit={event => void (registering ? registerAccount(event) : signIn(event))}>
+            {registering ? <>
+              <Field label="Full name" value={registerForm.name} onChange={value => setRegisterForm(current => ({...current, name: value}))} required placeholder="Enter your name" />
+              <Field label="Phone number" value={registerForm.phone} onChange={value => setRegisterForm(current => ({...current, phone: value}))} required inputMode="tel" placeholder="Enter your phone number" />
+              <Field label="Date of birth" type="date" value={registerForm.dob} onChange={value => setRegisterForm(current => ({...current, dob: value}))} required max={localDate()} />
+              <Field label="Password" type="password" value={registerForm.password} onChange={value => setRegisterForm(current => ({...current, password: value}))} required placeholder="At least 6 characters" />
+              <Field label="Confirm password" type="password" value={registerForm.confirmPassword} onChange={value => setRegisterForm(current => ({...current, confirmPassword: value}))} required placeholder="Enter your password again" />
+            </> : <>
+              <Field label="Phone number" value={loginForm.phone} onChange={value => setLoginForm(current => ({...current, phone: value}))} required inputMode="tel" placeholder="Enter your phone number" />
+              <Field label="Password" type="password" value={loginForm.password} onChange={value => setLoginForm(current => ({...current, password: value}))} required placeholder="Enter your password" />
+            </>}
             {authError && <p className="auth-error" role="alert">{authError}</p>}
-            <button className="button button-primary auth-submit" type="submit" disabled={authLoading}>{authLoading ? 'Signing in…' : 'Sign in'}</button>
+            <button className="button button-primary auth-submit" type="submit" disabled={authLoading}>{authLoading ? (registering ? 'Creating account…' : 'Signing in…') : (registering ? 'Create account' : 'Sign in')}</button>
           </form>
-          <p className="auth-footnote">Sign in with the same MilkBook account you use on Android. Customer, milk, and rate changes sync through your MilkBook account.</p>
+          <p className="auth-switch">{registering ? 'Already have an account?' : 'Don’t have an account?'} <button type="button" onClick={() => {setAuthMode(registering ? 'login' : 'register'); setAuthError('');}}>{registering ? 'Sign in' : 'Create account'}</button></p>
+          <p className="auth-footnote">Use the same MilkBook account on the website and Android. Customer, milk, and rate changes sync through your account.</p>
         </section>
       </main>
     );
@@ -541,11 +596,11 @@ function PageHeading({eyebrow, title, subtitle, action}: {eyebrow: string; title
   return <div className="page-heading"><div><p className="overline">{eyebrow}</p><h1>{title}</h1><p className="muted">{subtitle}</p></div>{action}</div>;
 }
 
-function Field({label, value, onChange, type = 'text', placeholder, required, inputMode, min, step}: {
+function Field({label, value, onChange, type = 'text', placeholder, required, inputMode, min, max, step}: {
   label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string; required?: boolean;
-  inputMode?: 'text' | 'tel' | 'decimal' | 'numeric'; min?: string; step?: string;
+  inputMode?: 'text' | 'tel' | 'decimal' | 'numeric'; min?: string; max?: string; step?: string;
 }) {
-  return <label className="field"><span>{label}</span><input type={type} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} required={required} inputMode={inputMode} min={min} step={step} /></label>;
+  return <label className="field"><span>{label}</span><input type={type} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} required={required} inputMode={inputMode} min={min} max={max} step={step} /></label>;
 }
 
 function SelectField({label, value, onChange, options, emptyLabel = 'Select customer'}: {
