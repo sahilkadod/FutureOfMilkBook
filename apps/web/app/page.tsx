@@ -17,7 +17,7 @@ type Entry = {
 type Rate = {customerId: string; month: string; rate: number};
 type MilkBookData = {customers: Customer[]; entries: Entry[]; rates: Rate[]};
 type MilkBookUser = {id: string; name: string; phone: string};
-type Section = 'dashboard' | 'customers' | 'collection' | 'billing' | 'rates';
+type Section = 'dashboard' | 'customers' | 'collection' | 'billing' | 'reports' | 'rates';
 
 type ApiCustomer = {_id?: string; id?: string; name?: string; phone?: string; address?: string};
 type ApiMilkEntry = {_id?: string; customerId?: string | {_id?: string}; date?: string; morningLiter?: number; morningFat?: number; eveningLiter?: number; eveningFat?: number};
@@ -29,6 +29,7 @@ const navigation: {id: Section; label: string; icon: string}[] = [
   {id: 'customers', label: 'Customers', icon: '♙'},
   {id: 'collection', label: 'Milk collection', icon: '◉'},
   {id: 'billing', label: 'Billing', icon: '₹'},
+  {id: 'reports', label: 'Reports', icon: '▤'},
   {id: 'rates', label: 'Milk rates', icon: '◇'},
 ];
 
@@ -133,6 +134,7 @@ export default function DashboardPage() {
   const [registerForm, setRegisterForm] = useState({name: '', phone: '', dob: '', password: '', confirmPassword: ''});
   const [section, setSection] = useState<Section>('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [reportYear, setReportYear] = useState(() => String(new Date().getFullYear()));
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [entryDate, setEntryDate] = useState(localDate);
   const [entryValues, setEntryValues] = useState({morningLitres: '', morningFat: '', eveningLitres: '', eveningFat: ''});
@@ -207,6 +209,12 @@ export default function DashboardPage() {
   }, [user, selectedMonth, selectedCustomerId]);
 
   useEffect(() => {
+    if (!user || section !== 'reports') return;
+    const months = Array.from({length: 12}, (_, index) => `${reportYear}-${String(index + 1).padStart(2, '0')}`);
+    void refreshSharedData(user.id, months);
+  }, [user, section, reportYear]);
+
+  useEffect(() => {
     if (ready && user) window.localStorage.setItem(accountStorageKey(user.id), JSON.stringify(data));
   }, [data, ready, user]);
 
@@ -246,6 +254,25 @@ export default function DashboardPage() {
   );
   const selectedRate = data.rates.find(item => item.customerId === selectedCustomerId && item.month === selectedMonth)?.rate ?? 0;
   const bill = useMemo(() => calculateMilkTotals(billEntries, selectedRate), [billEntries, selectedRate]);
+  const reportMonths = useMemo(() => Array.from({length: 12}, (_, index) => `${reportYear}-${String(index + 1).padStart(2, '0')}`), [reportYear]);
+  const yearEntries = useMemo(() => data.entries.filter(entry => entry.date.startsWith(`${reportYear}-`)), [data.entries, reportYear]);
+  const yearTotals = useMemo(() => calculateMilkTotals(yearEntries, 0), [yearEntries]);
+  const monthlyReport = useMemo(() => reportMonths.map(month => {
+    const entries = yearEntries.filter(entry => entry.date.startsWith(month));
+    const amount = entries.reduce((sum, entry) => {
+      const rate = data.rates.find(item => item.customerId === entry.customerId && item.month === month)?.rate ?? 0;
+      return sum + entry.morningLitres * entry.morningFat * rate + entry.eveningLitres * entry.eveningFat * rate;
+    }, 0);
+    return {month, entries, totals: calculateMilkTotals(entries, 0), amount};
+  }), [reportMonths, yearEntries, data.rates]);
+  const reportCustomerRows = useMemo(() => data.customers.map(customer => {
+    const entries = yearEntries.filter(entry => entry.customerId === customer.id);
+    const amount = monthlyReport.reduce((sum, month) => sum + month.entries.filter(entry => entry.customerId === customer.id).reduce((monthSum, entry) => {
+      const rate = data.rates.find(item => item.customerId === customer.id && item.month === month.month)?.rate ?? 0;
+      return monthSum + entry.morningLitres * entry.morningFat * rate + entry.eveningLitres * entry.eveningFat * rate;
+    }, 0), 0);
+    return {customer, totals: calculateMilkTotals(entries, 0), amount};
+  }).sort((a, b) => b.amount - a.amount), [data.customers, data.rates, yearEntries, monthlyReport]);
   const customerName = data.customers.find(customer => customer.id === selectedCustomerId)?.name ?? 'Select a customer';
   const sectionLabel = navigation.find(item => item.id === section)?.label ?? 'Dashboard';
 
@@ -531,7 +558,8 @@ export default function DashboardPage() {
               <section className="shortcut-grid">
                 <Shortcut icon="＋" title="Milk collection" description="Record morning and evening milk and fat" onClick={() => setSection('collection')} />
                 <Shortcut icon="♙" title="Customers" description="Add people and review their details" onClick={() => setSection('customers')} />
-                <Shortcut icon="▤" title="Billing & reports" description="See monthly sessions and customer totals" onClick={() => setSection('billing')} />
+                <Shortcut icon="₹" title="Monthly billing" description="Review customer statements and print bills" onClick={() => setSection('billing')} />
+                <Shortcut icon="▤" title="Collection reports" description="Compare daily and monthly collection totals" onClick={() => setSection('reports')} />
                 <Shortcut icon="₹" title="Milk rates" description="Set a rate for each customer and month" onClick={() => setSection('rates')} />
               </section>
               <p className="notice"><strong>Shared MilkBook data:</strong> Changes sync through your account. This browser keeps a local cache for quicker loading; backup restore imports records into this browser only.</p>
@@ -565,12 +593,47 @@ export default function DashboardPage() {
 
           {ready && section === 'billing' && (
             <>
-              <PageHeading eyebrow="MONTHLY STATEMENT" title="Billing & reports" subtitle="Review customer sessions and calculate the monthly amount." />
+              <PageHeading eyebrow="MONTHLY STATEMENT" title="Monthly billing" subtitle="Review customer sessions and print a monthly bill." />
               <section className="panel filter-panel"><SelectField label="Customer" value={selectedCustomerId} onChange={setSelectedCustomerId} options={data.customers.map(customer => ({value: customer.id, label: customer.name}))} emptyLabel="No customers" /><Field label="Billing month" type="month" value={selectedMonth} onChange={setSelectedMonth} required /><div className="rate-summary"><span>Saved rate</span><strong>{money(selectedRate)} <small>/ fat unit</small></strong><button className="text-button" onClick={() => setSection('rates')}>Edit rate</button></div></section>
               {data.customers.length === 0 ? <EmptyState icon="₹" title="Billing starts with customers" description="Add a customer, record milk, and set a monthly rate to see a bill." action={<button className="button button-primary" onClick={() => setSection('customers')}>Add customer</button>} /> : <>
                 <section className="bill-summary"><Metric label="Total milk" value={`${bill.totalMilk.toFixed(1)} L`} note={`${billEntries.length} recorded ${billEntries.length === 1 ? 'day' : 'days'}`} icon="◉" /><Metric label="Total fat" value={bill.totalFat.toFixed(1)} note="Sum of entered session readings" icon="◇" /><Metric label="Average fat" value={bill.averageFat.toFixed(2)} note="Display only" icon="≈" /><Metric label="Total amount" value={money(bill.amount)} note="Sum of session amounts" icon="₹" /></section>
                 <section className="panel table-panel bill-panel"><div className="panel-heading"><div><h2>{customerName}</h2><p className="muted">Statement for {selectedMonth}</p></div><button className="button button-quiet" onClick={() => window.print()}>Print bill</button></div>{billEntries.length === 0 ? <EmptyInline message="No milk entries for this customer and month." action={<button className="button button-primary" onClick={() => {setEntryDate(`${selectedMonth}-01`); setSection('collection');}}>Add an entry</button>} /> : <div className="table-scroll"><table><thead><tr><th>Date</th><th>Morning litres</th><th>Morning fat</th><th>Evening litres</th><th>Evening fat</th><th>Day amount</th></tr></thead><tbody>{billEntries.map(entry => {const rate = selectedRate; const amount = entry.morningLitres * entry.morningFat * rate + entry.eveningLitres * entry.eveningFat * rate; return <tr key={entry.id}><td>{formatLongDate(entry.date)}</td><td>{entry.morningLitres || '—'}</td><td>{entry.morningFat || '—'}</td><td>{entry.eveningLitres || '—'}</td><td>{entry.eveningFat || '—'}</td><td><strong>{money(amount)}</strong></td></tr>;})}</tbody><tfoot><tr><td>Total</td><td>{billEntries.reduce((sum, entry) => sum + entry.morningLitres, 0).toFixed(1)}</td><td>{billEntries.reduce((sum, entry) => sum + entry.morningFat, 0).toFixed(1)}</td><td>{billEntries.reduce((sum, entry) => sum + entry.eveningLitres, 0).toFixed(1)}</td><td>{billEntries.reduce((sum, entry) => sum + entry.eveningFat, 0).toFixed(1)}</td><td>{money(bill.amount)}</td></tr></tfoot></table></div>}<p className="bill-rule">Bill rule: each session’s litres × fat × {money(selectedRate)} rate, added together.</p></section>
               </>}
+            </>
+          )}
+
+          {ready && section === 'reports' && (
+            <>
+              <PageHeading eyebrow="DAIRY REPORTS" title="Collection & revenue" subtitle="Daily totals, monthly billed revenue, and customer summaries." action={<Field label="Report year" type="number" value={reportYear} onChange={setReportYear} min="2000" max={String(new Date().getFullYear())} />} />
+              <section className="bill-summary">
+                <Metric label="Milk this year" value={`${yearTotals.totalMilk.toFixed(1)} L`} note={`${yearEntries.length} customer-day records`} icon="◉" />
+                <Metric label="Total fat" value={yearTotals.totalFat.toFixed(1)} note="Sum of session readings" icon="◇" />
+                <Metric label="Billed revenue" value={money(monthlyReport.reduce((sum, month) => sum + month.amount, 0))} note="Based on saved monthly rates" icon="₹" />
+                <Metric label="Recorded days" value={String(new Set(yearEntries.map(entry => entry.date)).size)} note={`Across ${reportYear}`} icon="▦" />
+              </section>
+              <p className="notice"><strong>Payments are not tracked yet.</strong> Billed revenue shows calculated charges; it does not indicate money received or the amount still owed.</p>
+              <section className="panel table-panel report-panel">
+                <div className="panel-heading"><div><h2>Monthly summary</h2><p className="muted">Collection and billed revenue by month in {reportYear}.</p></div></div>
+                <div className="table-scroll"><table><thead><tr><th>Month</th><th>Collection days</th><th>Total milk</th><th>Total fat</th><th>Billed revenue</th></tr></thead><tbody>
+                  {monthlyReport.map(item => <tr key={item.month}><td><button className="text-button" onClick={() => {setSelectedMonth(item.month); setSection('billing');}}>{new Intl.DateTimeFormat('en-IN', {month: 'long'}).format(new Date(`${item.month}-01T12:00:00`))}</button></td><td>{new Set(item.entries.map(entry => entry.date)).size}</td><td>{item.totals.totalMilk.toFixed(1)} L</td><td>{item.totals.totalFat.toFixed(1)}</td><td><strong>{money(item.amount)}</strong></td></tr>)}
+                </tbody></table></div>
+              </section>
+              <section className="panel table-panel report-panel">
+                <div className="panel-heading"><div><h2>Daily collection</h2><p className="muted">Latest collection dates recorded in {reportYear}.</p></div></div>
+                {yearEntries.length === 0 ? <EmptyInline message={`No milk entries found for ${reportYear}.`} /> : <div className="table-scroll"><table><thead><tr><th>Date</th><th>Customers recorded</th><th>Morning litres</th><th>Evening litres</th><th>Total milk</th><th>Total fat</th></tr></thead><tbody>
+                  {[...new Set(yearEntries.map(entry => entry.date))].sort((a, b) => b.localeCompare(a)).slice(0, 31).map(date => {
+                    const entries = yearEntries.filter(entry => entry.date === date);
+                    const totals = calculateMilkTotals(entries, 0);
+                    return <tr key={date}><td>{formatLongDate(date)}</td><td>{entries.length}</td><td>{entries.reduce((sum, entry) => sum + entry.morningLitres, 0).toFixed(1)} L</td><td>{entries.reduce((sum, entry) => sum + entry.eveningLitres, 0).toFixed(1)} L</td><td><strong>{totals.totalMilk.toFixed(1)} L</strong></td><td>{totals.totalFat.toFixed(1)}</td></tr>;
+                  })}
+                </tbody></table></div>}
+              </section>
+              <section className="panel table-panel report-panel">
+                <div className="panel-heading"><div><h2>Customer summary</h2><p className="muted">Annual totals by customer.</p></div></div>
+                {reportCustomerRows.length === 0 ? <EmptyInline message="Add customers to see their annual totals." /> : <div className="table-scroll"><table><thead><tr><th>Customer</th><th>Recorded days</th><th>Total milk</th><th>Total fat</th><th>Billed revenue</th></tr></thead><tbody>
+                  {reportCustomerRows.map(row => <tr key={row.customer.id}><td><strong>{row.customer.name}</strong></td><td>{yearEntries.filter(entry => entry.customerId === row.customer.id).length}</td><td>{row.totals.totalMilk.toFixed(1)} L</td><td>{row.totals.totalFat.toFixed(1)}</td><td><strong>{money(row.amount)}</strong></td></tr>)}
+                </tbody></table></div>}
+              </section>
             </>
           )}
 
@@ -626,3 +689,4 @@ function EmptyState({icon, title, description, action}: {icon: string; title: st
 function EmptyInline({message, action}: {message: string; action?: ReactNode}) {
   return <div className="empty-inline"><p>{message}</p>{action}</div>;
 }
+
