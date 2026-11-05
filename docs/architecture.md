@@ -65,6 +65,6 @@ The existing MilkBook implementation and actual statements must be audited befor
 
 The web directory contains a responsive dashboard UI preview. It uses placeholder values and does not yet have authentication, API calls, persistence or real-time sync. The mobile root contains an initial UI shell and a provisional calculation function. This is not a production-ready full-stack system.
 
-## Next implementation gate
+## Current build sequence
 
-Inspect the original MilkBook source and database. Record schema, navigation, calculation behavior and existing user workflows. Then design migrations and API contracts that preserve existing records before implementing sign-in and cross-device synchronization.
+The new application is being developed as a clean implementation; the previous MilkBook repository is not being connected or modified. Build the shared domain contracts first, then add the authenticated API and database adapter, followed by browser CRUD screens and the mobile SQLite adapter. Before production billing, explicitly confirm rounding, missing-session handling, effective rate dates and historical corrections against the owner's business rules.
