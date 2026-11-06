@@ -197,7 +197,7 @@ export default function DashboardPage() {
     const refreshEverythingIfVisible = () => {
       if (document.visibilityState === 'visible') void refreshSharedData(user.id);
     };
-    const timer = window.setInterval(refreshSelectedIfVisible, 15000);
+    const timer = window.setInterval(refreshSelectedIfVisible, 300000);
     window.addEventListener('focus', refreshEverythingIfVisible);
     document.addEventListener('visibilitychange', refreshEverythingIfVisible);
     refreshSelectedIfVisible();
